@@ -1,0 +1,2 @@
+Copy your trained RoadGuard_YOLO11n_Laptop.pt into this folder.
+Weights are not bundled with the source code.
