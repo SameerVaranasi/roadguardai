@@ -1,98 +1,103 @@
-# RoadGuard — Train 16 Models on Raspberry Pi 3 (1GB RAM)
+# RoadGuard AI — Training & Comparing 16 Machine Learning Models
 
-Lightweight, memory-aware training script that trains all 16 algorithms from your
-project on a Raspberry Pi 3 within a ~4.5-hour budget.
+**A software-focused computer vision and machine learning project for pothole detection.**
 
-> **Honesty note:** Pi 3 has 1GB RAM and 1.4GHz CPU. Heavy detectors (Faster R-CNN,
-> Mask R-CNN, RetinaNet) cannot realistically be trained in their full form on Pi 3.
-> This package substitutes **lite versions** (MobileNet backbones + a small detection
-> head) for the four heaviest detectors. They train and produce metrics, but they
-> are approximations, not the original papers' models. YOLO11n uses the real
-> Ultralytics implementation with batch=2, imgsz=160, CPU only.
+**GitHub:** https://github.com/SameerVaranasi/roadguardai
 
----
+RoadGuard AI explores 16 machine learning and deep learning approaches for recognizing potholes in road imagery. The goal is to build a reproducible training and evaluation workflow, compare suitable models, and identify candidates for integration into a road-hazard detection application.
 
-## 0) What this package contains
+> **Model integrity:** These 16 entries do **not** all implement the original detection architectures. Classical ML methods and the transfer-learning CNNs are **image classifiers**. YOLO11n is a real object detector. The entries named *Faster R-CNN Lite*, *SSD Lite*, *RetinaNet Lite*, and *Mask R-CNN Lite* are **simplified proxy architectures**, not faithful implementations of their namesakes. Report their results under those names, not as benchmarks for the original papers' models.
+>
+> **Implementation note:** This README updates the *software documentation*, not the training code. The commands below assume the training script has been named `scripts/train_16_models.py`, its dependencies are listed in `requirements.txt`, and output paths / device settings have been updated as needed. Rename and adapt the actual files before running these commands.
 
-```
-roadguard_pi_training/
+## 1. Project objectives
+
+- Prepare and validate a pothole image dataset.
+- Train classical ML, convolutional neural network, and object-detection approaches.
+- Compare models using task-appropriate metrics and reproducible data splits.
+- Save trained weights, logs, and evaluation results.
+- Select practical models for integration with a software-based detection workflow.
+
+## 2. Technologies
+
+| Area | Technologies |
+| --- | --- |
+| Programming | Python |
+| Classical machine learning | scikit-learn, XGBoost |
+| Deep learning | PyTorch / Ultralytics, TensorFlow / Keras (as used by the training script) |
+| Image processing | OpenCV, Pillow, HOG features |
+| Data handling | NumPy, pandas, YAML |
+| Evaluation | Accuracy, precision, recall, F1-score, mAP@50 |
+| Visualization | Matplotlib |
+| Development environment | Windows, Linux, or Google Colab |
+
+The exact libraries and versions must match the actual implementations in the repository.
+
+## 3. Proposed project structure
+
+```text
+roadguard_model_benchmark/
 ├── scripts/
-│   └── train_16_models_pi.py     # main training script
+│   └── train_16_models.py         # model training and evaluation entry point
 ├── configs/
-│   └── data.example.yaml         # YOLO dataset config template
-├── requirements-pi.txt           # Python deps (Pi 3 friendly)
-└── README_PI.md                  # this file
+│   └── data.example.yaml          # example dataset configuration
+├── requirements.txt               # desktop / Colab Python dependencies
+├── outputs/                       # created during execution
+│   ├── results.csv
+│   ├── comparison_chart.png
+│   ├── training_log.txt
+│   ├── weights/
+│   └── exports/
+└── README.md
 ```
 
-## 1) One-time Pi 3 setup (about 30 min)
+**Note:** This is the desired software-oriented layout. Only the README has been rewritten here; these filenames and folders must be present in the real repository for the commands to work.
 
-### a) Increase swap to 4GB (otherwise large models OOM)
+## 4. Models included
 
-```bash
-sudo nano /etc/dphys-swapfile
-#   CONF_SWAPSIZE=4096
-sudo systemctl restart dphys-swapfile
-free -h   # check Swap row shows ~4.0Gi
-```
+| # | Model | Type | General approach |
+| --- | --- | --- | --- |
+| 1 | Random Forest | Image classification | HOG features + PCA + Random Forest |
+| 2 | Support Vector Machine | Image classification | HOG features + PCA + RBF SVM |
+| 3 | Decision Tree | Image classification | HOG features + PCA + Decision Tree |
+| 4 | K-Nearest Neighbors | Image classification | HOG features + PCA + KNN |
+| 5 | Logistic Regression | Image classification | HOG features + PCA + Logistic Regression |
+| 6 | XGBoost | Image classification | HOG features + PCA + gradient-boosted trees |
+| 7 | AdaBoost | Image classification | HOG features + PCA + AdaBoost |
+| 8 | Custom CNN | Image classification | Lightweight convolutional network |
+| 9 | ResNet-50 | Image classification | Transfer learning with a classification head |
+| 10 | MobileNetV2 | Image classification | Transfer learning with a classification head |
+| 11 | EfficientNet-B0 | Image classification | Transfer learning with a classification head |
+| 12 | YOLO11n | Object detection | Ultralytics YOLO11n fine-tuning |
+| 13 | Faster R-CNN Lite | Proxy detection | Simplified MobileNet-based detector; **not Faster R-CNN** |
+| 14 | SSD Lite | Proxy detection | Simplified MobileNet-based detection head; **not full SSD** |
+| 15 | RetinaNet Lite | Proxy detection | Simplified detector using focal loss; **not RetinaNet** |
+| 16 | Mask R-CNN Lite | Proxy / experimental | Simplified model with a mask-related head; **not Mask R-CNN** |
 
-### b) Reduce GPU memory split (give RAM back to CPU)
+The dataset shown below has **bounding boxes**, not ground-truth segmentation masks. A valid instance-segmentation evaluation would require appropriate mask annotations; do not describe proxy mask outputs as verified instance segmentation.
 
-```bash
-sudo raspi-config
-# Performance Options → GPU Memory → 16
-sudo reboot
-```
+## 5. Dataset preparation
 
-### c) Install 64-bit Raspberry Pi OS (REQUIRED)
+The project uses a pothole dataset in **YOLO annotation format**.
 
-The TF/torch wheels below only work on **64-bit** Pi OS (Bookworm or Bullseye).
-Run `uname -m` — it should say `aarch64`. If it says `armv7l`, reinstall with the
-**64-bit** Raspberry Pi OS image.
-
-### d) System packages
-
-```bash
-sudo apt update
-sudo apt install -y python3-venv python3-pip python3-dev build-essential \
-                    libopenblas-dev libhdf5-dev libjpeg-dev zlib1g-dev \
-                    libpq-dev pkg-config git
-```
-
-### e) Create venv + install
-
-```bash
-cd ~/roadguard_pi_training
-python3 -m venv venv --system-site-packages
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements-pi.txt
-```
-
-> **TF install on Pi 3 takes ~20 min and ~700 MB disk.** Plan accordingly.
-> If `tensorflow-cpu==2.15.1` install fails, try `pip install tensorflow-aarch64`
-> or use the system-provided `python3-tensorflow` apt package on Bookworm.
-
-## 2) Prepare your dataset
-
-Your existing `RoadGuard-Potholes` dataset is already in YOLO format. Just point
-the script at its `data.yaml`. Example layout:
-
-```
-~/datasets/RoadGuard-Potholes/
-├── train/images/*.jpg
-├── train/labels/*.txt
-├── valid/images/*.jpg
-├── valid/labels/*.txt
-├── test/images/*.jpg
-├── test/labels/*.txt
+```text
+RoadGuard-Potholes/
+├── train/
+│   ├── images/
+│   └── labels/
+├── valid/
+│   ├── images/
+│   └── labels/
+├── test/
+│   ├── images/
+│   └── labels/
 └── data.yaml
 ```
 
-Edit `data.yaml` so paths are absolute on the Pi:
+Example `data.yaml`:
 
 ```yaml
-# data.yaml
-path: /home/pi/datasets/RoadGuard-Potholes
+path: /absolute/path/to/RoadGuard-Potholes
 train: train/images
 val: valid/images
 test: test/images
@@ -100,137 +105,128 @@ nc: 1
 names: ['pothole']
 ```
 
-A copy of this template is in `configs/data.example.yaml`.
+Update `path` to the actual location on your computer or Colab session.
 
-## 3) Run the full 16-model training (4.5 hours)
+**For classification models:** Convert the detection annotations to image-level labels using a documented rule, for example *pothole present* if an image contains at least one pothole bounding box, otherwise *no pothole*. Use the training split for fitting preprocessing such as PCA, then apply the same transformation to validation/test images. Do not mix data across splits.
+
+**For detectors:** Use the original image and bounding-box annotations. Assess detection quality using detection metrics, not just image-level accuracy.
+
+## 6. Set up the Python environment
+
+### Windows (PowerShell)
+
+```powershell
+cd roadguard_model_benchmark
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Linux / macOS
 
 ```bash
-cd ~/roadguard_pi_training
-source venv/bin/activate
-python3 scripts/train_16_models_pi.py \
-    --data /home/pi/datasets/RoadGuard-Potholes/data.yaml \
-    --time-budget 270 \
-    --max-train-images 400 \
-    --max-val-images 120
+cd roadguard_model_benchmark
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 ```
 
-Recommended: run inside `tmux` so SSH disconnects don't kill the job:
+### Google Colab
+
+Upload or clone the project and make the dataset accessible within the session. Install dependencies in the notebook:
 
 ```bash
-sudo apt install -y tmux
-tmux new -s rg
-# (run the python command above)
-# Ctrl-B then d to detach;  tmux attach -t rg  to reattach
+!pip install -r requirements.txt
 ```
 
-## 4) Run only a subset (faster iteration)
+For GPU acceleration, install versions of the deep learning frameworks compatible with your system and available accelerator. **The original script may force CPU execution**; update its training configuration if GPU use is intended. GPU availability alone does not guarantee every model will run on it.
+
+## 7. Train and evaluate the models
+
+### Run the full benchmark
 
 ```bash
-# Only the 7 classical models (~35 min)
-python3 scripts/train_16_models_pi.py --data <path> --models classifiers
-
-# Only the 4 CNN transfer-learning models (~90 min)
-python3 scripts/train_16_models_pi.py --data <path> --models cnn
-
-# Only detectors (YOLO11n + 4 lite variants, ~130 min)
-python3 scripts/train_16_models_pi.py --data <path> --models detectors
-
-# Specific subset
-python3 scripts/train_16_models_pi.py --data <path> \
-    --models random_forest,xgboost,mobilenetv2,yolo11n
+python scripts/train_16_models.py \
+  --data /absolute/path/to/RoadGuard-Potholes/data.yaml \
+  --time-budget 270 \
+  --max-train-images 400 \
+  --max-val-images 120
 ```
 
-## 5) Outputs
+`--time-budget 270` is a **requested time limit in minutes**, not a promise that all 16 models will finish in 4.5 hours. Actual runtime depends on CPU/GPU, dataset size, software versions, and the training script's time-limit handling.
 
-After the run finishes (or crashes), look in `outputs_pi/`:
-
-| File | Description |
-|------|-------------|
-| `results.csv` | One row per model: status, accuracy/precision/recall/F1, mAP@50 (detectors), epochs, time used, notes. **Incrementally written** — safe even if Pi reboots mid-run. |
-| `comparison_chart.png` | Horizontal bar chart of F1/mAP for all trained models. |
-| `training_log.txt` | Full text log with timestamps and memory usage. |
-| `weights/` | Saved `.keras` files for trained CNNs/detectors; sklearn pickles for classical. |
-| `exports/` | TFLite versions of the **top 3** models by F1/mAP — drop-in for Pi inference. |
-
-## 6) Time & memory budget per model (Pi 3 1GB)
-
-| # | Model | Approach | Budget (min) | Notes |
-|---|---|---|---|---|
-| 1 | Random Forest | HOG+PCA → sklearn RF | 5 | 50 trees |
-| 2 | SVM | HOG+PCA → RBF SVC | 8 | cache_size=200 |
-| 3 | Decision Tree | HOG+PCA → DTree | 3 | depth 10 |
-| 4 | KNN | HOG+PCA → k=5 | 3 | brute force |
-| 5 | Logistic Reg | HOG+PCA → LR | 3 | max_iter 500 |
-| 6 | XGBoost | HOG+PCA → XGB | 8 | hist method |
-| 7 | AdaBoost | HOG+PCA → Ada | 5 | 50 weak learners |
-| 8 | CNN custom | 3-conv tiny CNN | 25 | batch=16 |
-| 9 | ResNet-50 | Frozen + head | 25 | batch=2 |
-| 10 | MobileNetV2 | Frozen + head | 20 | batch=4 |
-| 11 | EfficientNet-B0 | Frozen + head | 20 | batch=2 |
-| 12 | YOLO11n | Ultralytics finetune | 35 | batch=2, imgsz=160, CPU |
-| 13 | Faster R-CNN lite | MobileNetV3Small + 1-stage head | 25 | batch=2 |
-| 14 | SSD lite | MobileNetV2 + 1-stage head | 20 | batch=4 |
-| 15 | RetinaNet lite | MobileNetV2 + focal-loss head | 25 | batch=2 |
-| 16 | Mask R-CNN lite | MobileNetV3Small + mask head | 25 | batch=1 |
-
-**Total: 240 min training + 15 min feat-extract + 15 min eval/export ≈ 270 min (4.5 h)**
-
-If you change `--time-budget`, all per-model budgets scale proportionally.
-
-## 7) What to expect on Pi 3 (honest expectations)
-
-- **Classical models (1-7):** Will finish easily, well within budget. Accuracies
-  typically 70–85% on HOG features.
-- **CNN transfer (8-11):** Will train but slowly — ~1 epoch/min. Frozen backbones
-  keep RAM ~600 MB peak.
-- **YOLO11n (12):** Will train but slowly. If it OOMs even at batch=1, run with
-  `--models classifiers,cnn` to skip it. On Pi 3 expect ~3-5 epochs in 35 min.
-- **Lite detectors (13-16):** Will train ~5-10 epochs each. They are
-  approximations, not full Faster R-CNN / Mask R-CNN. Their purpose is to give
-  you comparable detection metrics within the Pi's hardware limits.
-
-## 8) If a model crashes
-
-The script catches per-model exceptions and **continues** to the next model. The
-crashed model is logged as `crashed` in `results.csv` with a short error note.
-The crash does NOT kill the run.
-
-## 9) Re-running / resuming
-
-The script always overwrites `results.csv` per run. To preserve a previous run,
-rename the file first:
+### Run selected groups
 
 ```bash
-mv outputs_pi/results.csv outputs_pi/results_run1.csv
+# Classical ML classifiers
+python scripts/train_16_models.py --data /path/to/data.yaml --models classifiers
+
+# CNN classifiers
+python scripts/train_16_models.py --data /path/to/data.yaml --models cnn
+
+# Detection models and experimental proxies
+python scripts/train_16_models.py --data /path/to/data.yaml --models detectors
+
+# Named models
+python scripts/train_16_models.py --data /path/to/data.yaml \
+  --models random_forest,xgboost,mobilenetv2,yolo11n
 ```
 
-## 10) After training — deploying on Pi
+These examples use the command-line options documented for the original training script. Check `python scripts/train_16_models.py --help` after updating the script to confirm that the options are supported.
 
-The top 3 models are auto-exported to `outputs_pi/exports/*.tflite`. To run
-inference with TFLite on the Pi:
+## 8. Evaluation and fair comparisons
 
-```python
-import tflite_runtime.interpreter as tflite
-import numpy as np
-from PIL import Image
+| Model task | Useful metrics | Interpretation |
+| --- | --- | --- |
+| Image classification | Accuracy, precision, recall, F1-score | Is a pothole present anywhere in the image? |
+| Object detection | mAP@50, precision, recall | Where are the potholes, and how well do predicted boxes match annotations? |
+| Experimental proxy detection | Metric supported by the proxy's actual output/labels | Not equivalent to the corresponding full detection architecture |
 
-interp = tflite.Interpreter(model_path="outputs_pi/exports/mobilenetv2.tflite")
-interp.allocate_tensors()
-in_d = interp.get_input_details()[0]
-out_d = interpreter.get_output_details()[0]
+**Important:** Do not place classifier F1-scores and detection mAP values on a single ranking chart as if they were the same metric. Report them in separate groups or explicitly label the axes and metric types. Also record train/validation/test sizes, confidence thresholds, preprocessing, and evaluation settings.
 
-img = Image.open("test.jpg").convert("L").resize((160, 160))
-arr = np.asarray(img, dtype=np.float32) / 255.0
-arr = np.stack([arr]*3, -1)[None]   # (1,160,160,3)
-interp.set_tensor(in_d["index"], arr)
-interp.invoke()
-score = float(interp.get_tensor(out_d["index"])[0, 0])
-print("pothole" if score > 0.5 else "normal", f"{score:.3f}")
-```
+An existing RoadGuard YOLO result has been reported as **66.7% mAP@50**. Treat that as a separately reported result until the exact dataset split, weights, and evaluation procedure are matched to the benchmark run.
 
-For TFLite runtime: `pip install tflite-runtime` (much smaller than full TF).
+## 9. Output artifacts
+
+Depending on what the training script actually implements, a run may produce:
+
+| Output | Purpose |
+| --- | --- |
+| `outputs/results.csv` | Per-model status, metrics, execution time, and notes |
+| `outputs/comparison_chart.png` | Visual comparison within compatible model tasks |
+| `outputs/training_log.txt` | Training progress, warnings, and failures |
+| `outputs/weights/` | Saved model weights or serialized classifiers |
+| `outputs/exports/` | Optional deployment exports, when supported |
+
+**Export limitations:** A `.keras` classifier may be convertible to TFLite with an appropriate input pipeline. A scikit-learn pickle is **not** a TFLite model, and YOLO exports require their own supported conversion workflow. Do not assume every model can be automatically exported as `.tflite` or that outputs share the same inference interface.
+
+## 10. Connecting the selected model to RoadGuard
+
+After evaluating models:
+
+1. Choose a model appropriate for the feature: classification for image-level warnings, detection for pothole locations.
+2. Save and version its weights alongside preprocessing and class labels.
+3. Implement an inference module that accepts an image or video frame.
+4. Connect predictions to the RoadGuard application's API or road-hazard workflow.
+5. Validate detection quality and inference latency on representative road videos.
+
+A classifier predicts whether an image contains a pothole; it does **not** produce bounding boxes unless additional localization logic is implemented.
+
+## 11. Troubleshooting
+
+- **Out-of-memory errors:** Reduce batch size, image resolution, or sample count; run models separately.
+- **Slow training:** Use a supported GPU configuration, smaller experiments, or pretrained feature extractors.
+- **Missing modules:** Check the active Python environment and `requirements.txt`.
+- **Dataset path errors:** Confirm paths in `data.yaml` and verify images/labels exist.
+- **Unexpected model metrics:** Validate split integrity, input preprocessing, threshold settings, and label conversion.
+- **Export failures:** Confirm the selected model framework supports the requested export format.
+
+## 12. Project status and transparency
+
+This repository describes a **16-approach experimental benchmark** for RoadGuard AI. The listed models are approaches to be trained and evaluated; a row in the README does not establish that training completed successfully. Publish actual metrics from `results.csv` only after verifying the corresponding runs. Keep the lightweight proxy detector results separate from results for the original architectures.
 
 ---
 
-**Need help?** Check `outputs_pi/training_log.txt` — every step is timestamped
-with current memory usage so you can see exactly where things went wrong.
+**RoadGuard AI** · Machine Learning · Computer Vision · Model Benchmarking · Python
